@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cross-Field Discovery Engine</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a1a; min-height: 100vh; }
+
+  /* Layout */
+  .app { display: flex; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar { width: 260px; flex-shrink: 0; background: #fff; border-right: 1px solid #e8e8e8; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; height: 100vh; overflow: hidden; z-index: 10; }
+  .sidebar-header { padding: 18px 16px 14px; border-bottom: 1px solid #f0f0f0; }
+  .sidebar-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #bbb; margin-bottom: 10px; }
+  .new-btn { width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 500; background: #1a1a1a; color: #fff; border: none; border-radius: 7px; cursor: pointer; transition: opacity 0.15s; text-align: left; }
+  .new-btn:hover { opacity: 0.82; }
+  .library-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .lib-empty { padding: 20px 16px; font-size: 13px; color: #bbb; line-height: 1.5; }
+  .lib-item { padding: 10px 16px; cursor: pointer; border-left: 3px solid transparent; transition: all 0.12s; position: relative; }
+  .lib-item:hover { background: #fafafa; }
+  .lib-item.active { border-left-color: #1a1a1a; background: #fafafa; }
+  .lib-item-title { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 24px; }
+  .lib-item-meta { font-size: 11px; color: #bbb; }
+  .lib-item-del { position: absolute; top: 10px; right: 12px; font-size: 14px; color: #ccc; background: none; border: none; cursor: pointer; padding: 0 4px; line-height: 1; display: none; }
+  .lib-item:hover .lib-item-del { display: block; }
+  .lib-item-del:hover { color: #c0392b; }
+
+  /* Main */
+  .main { margin-left: 260px; flex: 1; padding: 2rem 1.5rem 5rem; max-width: 780px; }
+
+  /* Header */
+  .page-header { margin-bottom: 1.75rem; }
+  .page-header h1 { font-size: 22px; font-weight: 600; margin-bottom: 5px; }
+  .page-header p { font-size: 14px; color: #666; line-height: 1.5; }
+
+  /* Setup */
+  .setup-panel { background: #fff; border: 1px solid #e8e8e8; border-radius: 12px; padding: 20px; margin-bottom: 1.25rem; }
+  .fields-row { display: grid; grid-template-columns: 1fr 32px 1fr; align-items: end; gap: 10px; margin-bottom: 1rem; }
+  label { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #888; margin-bottom: 6px; }
+  input[type=text] { width: 100%; padding: 10px 13px; font-size: 15px; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #1a1a1a; outline: none; transition: border-color 0.15s; }
+  input[type=text]:focus { border-color: #999; }
+  .x { text-align: center; font-size: 16px; color: #bbb; padding-bottom: 10px; }
+  .focus-row { margin-bottom: 1rem; }
+  .focus-optional { font-size: 10px; font-weight: 400; color: #bbb; letter-spacing: 0; text-transform: none; margin-left: 4px; }
+  .modes { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 1rem; }
+  .mode-btn { font-size: 13px; padding: 6px 13px; border-radius: 999px; border: 1px solid #ddd; background: #fff; color: #666; cursor: pointer; transition: all 0.15s; }
+  .mode-btn.active { border-color: #1a1a1a; color: #1a1a1a; font-weight: 600; }
+  .run-btn { width: 100%; padding: 12px; font-size: 15px; font-weight: 500; background: #1a1a1a; color: #fff; border: none; border-radius: 8px; cursor: pointer; transition: opacity 0.15s; }
+  .run-btn:hover { opacity: 0.85; }
+  .run-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Session toolbar */
+  .session-toolbar { display: none; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 8px; }
+  .session-toolbar.visible { display: flex; }
+  .session-name-wrap { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .session-name { font-size: 14px; font-weight: 600; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+  .rename-btn { font-size: 12px; color: #bbb; background: none; border: none; cursor: pointer; padding: 0; }
+  .rename-btn:hover { color: #666; }
+  .toolbar-actions { display: flex; gap: 7px; }
+  .tool-btn { font-size: 12px; padding: 6px 12px; border-radius: 7px; border: 1px solid #ddd; background: #fff; color: #555; cursor: pointer; transition: all 0.12s; white-space: nowrap; }
+  .tool-btn:hover { background: #f4f4f4; color: #1a1a1a; border-color: #ccc; }
+  .tool-btn.save-active { border-color: #27ae60; color: #27ae60; }
+
+  /* Thread */
+  .thread { display: none; flex-direction: column; gap: 1.25rem; margin-bottom: 1.25rem; }
+  .thread.visible { display: flex; }
+  .msg { display: flex; flex-direction: column; gap: 5px; }
+  .msg-role { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #ccc; }
+  .user-bubble { background: #f0f0f0; border-radius: 8px; padding: 11px 14px; font-size: 14px; color: #444; line-height: 1.55; display: inline-block; max-width: 90%; }
+  .response-card { background: #fff; border: 1px solid #e8e8e8; border-radius: 12px; overflow: hidden; }
+  .response-header { padding: 11px 16px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .response-title { font-size: 12px; font-weight: 600; color: #aaa; }
+  .tags { display: flex; gap: 5px; flex-wrap: wrap; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #f4f4f4; color: #777; border: 1px solid #eee; }
+  .response-body { padding: 18px 16px; }
+  .loading { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #888; }
+  .spinner { width: 15px; height: 15px; border: 2px solid #eee; border-top-color: #888; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .section { margin-bottom: 1.25rem; }
+  .section:last-child { margin-bottom: 0; }
+  .section-label { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #ccc; margin-bottom: 8px; }
+  .summary-box { padding: 12px 14px; background: #f8f8f8; border-radius: 8px; border-left: 3px solid #1a1a1a; font-size: 14px; line-height: 1.6; color: #333; }
+  .insight-list { display: flex; flex-direction: column; gap: 8px; }
+  .insight { padding: 11px 13px; background: #f8f8f8; border-radius: 8px; border-left: 2px solid #e0e0e0; }
+  .insight-title { font-size: 13px; font-weight: 600; color: #1a1a1a; margin-bottom: 3px; }
+  .insight-body { font-size: 13px; color: #555; line-height: 1.55; }
+  .chat-answer { font-size: 14px; color: #333; line-height: 1.7; }
+  .chat-answer p { margin-bottom: 0.7rem; }
+  .chat-answer p:last-child { margin-bottom: 0; }
+  .followups { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid #f0f0f0; }
+  .fq-btn { font-size: 13px; padding: 7px 13px; border-radius: 8px; border: 1px solid #e0e0e0; background: #fff; color: #555; cursor: pointer; transition: all 0.12s; text-align: left; line-height: 1.4; }
+  .fq-btn:hover { background: #f4f4f4; border-color: #ccc; color: #1a1a1a; }
+  .fq-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* Chat input */
+  .chat-box { background: #fff; border: 1px solid #e8e8e8; border-radius: 12px; padding: 14px 16px; display: none; }
+  .chat-box.visible { display: block; }
+  .chat-row { display: flex; gap: 8px; align-items: flex-end; }
+  textarea { flex: 1; padding: 9px 12px; font-size: 14px; font-family: inherit; border: 1px solid #ddd; border-radius: 8px; resize: none; outline: none; transition: border-color 0.15s; line-height: 1.5; overflow-y: hidden; color: #1a1a1a; background: #fff; }
+  textarea:focus { border-color: #999; }
+  .send-btn { padding: 9px 16px; font-size: 14px; font-weight: 500; background: #1a1a1a; color: #fff; border: none; border-radius: 8px; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; flex-shrink: 0; }
+  .send-btn:hover { opacity: 0.85; }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .chat-hint { font-size: 12px; color: #bbb; margin-top: 8px; }
+  .error-msg { font-size: 13px; color: #c0392b; padding: 8px 0; line-height: 1.5; }
+
+  /* Rename modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100; align-items: center; justify-content: center; }
+  .modal-overlay.visible { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+  .modal input { width: 100%; padding: 10px 13px; font-size: 14px; border: 1px solid #ddd; border-radius: 8px; outline: none; margin-bottom: 14px; }
+  .modal input:focus { border-color: #999; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-cancel { padding: 8px 16px; font-size: 14px; border: 1px solid #ddd; background: #fff; border-radius: 7px; cursor: pointer; }
+  .modal-confirm { padding: 8px 16px; font-size: 14px; font-weight: 500; background: #1a1a1a; color: #fff; border: none; border-radius: 7px; cursor: pointer; }
+
+  /* API key banner */
+  .apikey-banner { background: #fff; border: 1px solid #e8e8e8; border-radius: 12px; padding: 16px 20px; margin-bottom: 1.25rem; }
+  .apikey-banner-title { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #888; margin-bottom: 8px; }
+  .apikey-row { display: flex; gap: 8px; align-items: center; }
+  .apikey-input { flex: 1; padding: 9px 13px; font-size: 14px; font-family: inherit; border: 1px solid #ddd; border-radius: 8px; background: #fff; color: #1a1a1a; outline: none; transition: border-color 0.15s; letter-spacing: 0.04em; }
+  .apikey-input:focus { border-color: #999; }
+  .apikey-status { font-size: 12px; margin-top: 7px; }
+  .apikey-status.ok { color: #27ae60; }
+  .apikey-status.err { color: #c0392b; }
+  .apikey-hint { font-size: 12px; color: #bbb; margin-top: 6px; line-height: 1.5; }
+  .apikey-hint a { color: #888; }
+
+  /* Readonly view (library session) */
+  .readonly-banner { background: #fffbea; border: 1px solid #f0e68c; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #7a6a00; margin-bottom: 1rem; display: none; }
+  .readonly-banner.visible { display: block; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar library -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">Session Library</div>
+      <button class="new-btn" id="sidebarNewBtn">+ New search</button>
+    </div>
+    <div class="library-list" id="libraryList">
+      <div class="lib-empty" id="libEmpty">Saved sessions will appear here.</div>
+    </div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main">
+    <div class="page-header">
+      <h1>Cross-field discovery engine</h1>
+      <p>Enter two fields. AI searches the hidden margins between them — then explore with follow-up questions and save sessions to your library.</p>
+    </div>
+
+    <div class="apikey-banner" id="apikeyBanner">
+      <div class="apikey-banner-title">Anthropic API Key</div>
+      <div class="apikey-row">
+        <input class="apikey-input" type="password" id="apikeyInput" placeholder="sk-ant-..." autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="apikey-status" id="apikeyStatus"></div>
+      <div class="apikey-hint">Your key is stored only in your browser and never sent anywhere except directly to Anthropic. Get a key at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>.</div>
+    </div>
+
+    <div class="setup-panel" id="setupPanel">
+      <div class="fields-row">
+        <div>
+          <label>Field A</label>
+          <input type="text" id="fieldA" placeholder="e.g. jazz improvisation" />
+        </div>
+        <div class="x">×</div>
+        <div>
+          <label>Field B</label>
+          <input type="text" id="fieldB" placeholder="e.g. urban planning" />
+        </div>
+      </div>
+      <div class="focus-row">
+        <label for="focusField">Focus <span class="focus-optional">optional</span></label>
+        <input type="text" id="focusField" placeholder="e.g. How might this help reduce urban loneliness?" />
+      </div>
+      <div class="modes">
+        <button class="mode-btn active" data-mode="analogies">Structural analogies</button>
+        <button class="mode-btn" data-mode="transfer">Transferable methods</button>
+        <button class="mode-btn" data-mode="blind">Shared blind spots</button>
+        <button class="mode-btn" data-mode="hybrid">Hybrid hypotheses</button>
+      </div>
+      <button class="run-btn" id="runBtn">Search the margins →</button>
+    </div>
+
+    <div class="readonly-banner" id="readonlyBanner">Viewing a saved session — start a new search to continue exploring.</div>
+
+    <div class="session-toolbar" id="sessionToolbar">
+      <div class="session-name-wrap">
+        <span class="session-name" id="sessionName"></span>
+        <button class="rename-btn" id="renameBtn" title="Rename">✎</button>
+      </div>
+      <div class="toolbar-actions">
+        <button class="tool-btn" id="saveBtn">Save to library</button>
+        <button class="tool-btn" id="exportMdBtn">Export .md</button>
+        <button class="tool-btn" id="exportJsonBtn">Export .json</button>
+      </div>
+    </div>
+
+    <div class="thread" id="thread"></div>
+
+    <div class="chat-box" id="chatBox">
+      <div class="chat-row">
+        <textarea id="chatInput" placeholder="Ask a follow-up question..." rows="1"></textarea>
+        <button class="send-btn" id="sendBtn">Send</button>
+      </div>
+      <div class="chat-hint">The full conversation context is included in every reply.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Rename modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3>Rename session</h3>
+    <input type="text" id="modalInput" placeholder="Session name" />
+    <div class="modal-btns">
+      <button class="modal-cancel" id="modalCancel">Cancel</button>
+      <button class="modal-confirm" id="modalConfirm">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  /* ── State ── */
+  var activeMode = 'analogies';
+  var conversationHistory = [];
+  var currentFieldA = '', currentFieldB = '', currentFocus = '';
+  var isLoading = false;
+  var currentSessionId = null;
+  var currentSessionName = '';
+  var sessionMessages = [];
+  var isReadonly = false;
+  var apiKey = '';
+
+  /* ── API key persistence ── */
+  var API_KEY_STORAGE = 'discovery_apikey';
+  function loadApiKey() {
+    try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch(e) { return ''; }
+  }
+  function saveApiKey(key) {
+    try { localStorage.setItem(API_KEY_STORAGE, key); } catch(e) {}
+  }
+  var apikeyInput = document.getElementById('apikeyInput');
+  apiKey = loadApiKey();
+  if (apiKey) { apikeyInput.value = apiKey; document.getElementById('apikeyStatus').textContent = 'Key saved.'; document.getElementById('apikeyStatus').className = 'apikey-status ok'; }
+  apikeyInput.addEventListener('input', function() {
+    apiKey = this.value.trim();
+    saveApiKey(apiKey);
+    var status = document.getElementById('apikeyStatus');
+    if (apiKey.startsWith('sk-ant-') || apiKey.startsWith('sk-')) { status.textContent = 'Key saved.'; status.className = 'apikey-status ok'; }
+    else if (apiKey.length > 0) { status.textContent = 'Key should start with sk-ant-'; status.className = 'apikey-status err'; }
+    else { status.textContent = ''; }
+  });
+
+  /* ── Constants ── */
+  var LIBRARY_KEY = 'discovery_library';
+
+  var modeLabels = {
+    analogies: 'Structural analogies',
+    transfer: 'Transferable methods',
+    blind: 'Shared blind spots',
+    hybrid: 'Hybrid hypotheses'
+  };
+  var modeInstructions = {
+    analogies: 'Find deep structural analogies between the two fields — patterns, principles, or dynamics that appear in both but are rarely compared. Go beyond surface similarities.',
+    transfer: 'Identify specific methods, tools, or frameworks from one field that could be transferred to the other with transformative results. Focus on non-obvious transfers.',
+    blind: 'Identify what each field is systematically blind to — assumptions, questions, or phenomena they ignore — and show where those blind spots overlap or cancel each other.',
+    hybrid: 'Generate genuinely novel hypotheses that could only emerge by combining these two fields. These should be things that neither field could ask on its own.'
+  };
+  var SYSTEM = 'You are a cross-domain discovery engine. You help users find hidden connections, analogies, and insights between different fields of knowledge. You maintain context across a conversation, building on earlier discoveries.\n\nFor the INITIAL request, return ONLY valid JSON (no markdown, no backticks, no extra text):\n{"summary":"one sentence core connection","findings":[{"title":"short label","body":"2-3 sentence insight"},{"title":"short label","body":"2-3 sentence insight"},{"title":"short label","body":"2-3 sentence insight"},{"title":"short label","body":"2-3 sentence insight"}],"followUps":["specific follow-up question 1","specific follow-up question 2","specific follow-up question 3"]}\n\nFor FOLLOW-UP questions, respond in plain prose — be thorough and build on prior context. End your response with this exact line:\nFOLLOWUPS:["question 1","question 2","question 3"]';
+
+  /* ── Library helpers ── */
+  function loadLibrary() {
+    try { return JSON.parse(localStorage.getItem(LIBRARY_KEY) || '[]'); } catch(e) { return []; }
+  }
+  function saveLibrary(lib) {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib));
+  }
+  function renderLibrary() {
+    var lib = loadLibrary();
+    var list = document.getElementById('libraryList');
+    var empty = document.getElementById('libEmpty');
+    // remove existing items
+    list.querySelectorAll('.lib-item').forEach(function(el) { el.remove(); });
+    if (!lib.length) { empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    lib.slice().reverse().forEach(function(session) {
+      var item = document.createElement('div');
+      item.className = 'lib-item' + (session.id === currentSessionId ? ' active' : '');
+      item.dataset.id = session.id;
+      var d = new Date(session.savedAt);
+      var dateStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      item.innerHTML = '<div class="lib-item-title">' + esc(session.name) + '</div>'
+        + '<div class="lib-item-meta">' + esc(session.fieldA) + ' × ' + esc(session.fieldB) + ' · ' + dateStr + '</div>'
+        + '<button class="lib-item-del" data-id="' + session.id + '" title="Delete">×</button>';
+      list.appendChild(item);
+    });
+  }
+
+  /* ── Save / export ── */
+  function doSave() {
+    if (!sessionMessages.length) return;
+    var lib = loadLibrary();
+    var id = currentSessionId || ('s_' + Date.now());
+    var name = currentSessionName || (currentFieldA + ' × ' + currentFieldB);
+    var existing = lib.findIndex(function(s) { return s.id === id; });
+    var record = {
+      id: id,
+      name: name,
+      fieldA: currentFieldA,
+      fieldB: currentFieldB,
+      focus: currentFocus,
+      mode: activeMode,
+      savedAt: Date.now(),
+      messages: sessionMessages,
+      conversationHistory: conversationHistory
+    };
+    if (existing >= 0) lib[existing] = record;
+    else lib.push(record);
+    saveLibrary(lib);
+    currentSessionId = id;
+    var saveBtn = document.getElementById('saveBtn');
+    saveBtn.textContent = 'Saved ✓';
+    saveBtn.classList.add('save-active');
+    setTimeout(function() { saveBtn.textContent = 'Save to library'; saveBtn.classList.remove('save-active'); }, 2000);
+    renderLibrary();
+  }
+
+  function exportMarkdown() {
+    var lines = ['# ' + currentSessionName, ''];
+    if (currentFocus) lines.push('**Focus:** ' + currentFocus, '');
+    lines.push('**' + currentFieldA + ' × ' + currentFieldB + '**', '');
+    sessionMessages.forEach(function(m) {
+      if (m.role === 'user') {
+        lines.push('## You', '', m.text, '');
+      } else {
+        lines.push('## Discovery Engine', '', m.text, '');
+      }
+    });
+    downloadFile(currentSessionName.replace(/\s+/g,'_') + '.md', lines.join('\n'), 'text/markdown');
+  }
+
+  function exportJson() {
+    var data = {
+      name: currentSessionName,
+      fieldA: currentFieldA,
+      fieldB: currentFieldB,
+      focus: currentFocus,
+      mode: activeMode,
+      exportedAt: new Date().toISOString(),
+      messages: sessionMessages,
+      conversationHistory: conversationHistory
+    };
+    downloadFile(currentSessionName.replace(/\s+/g,'_') + '.json', JSON.stringify(data, null, 2), 'application/json');
+  }
+
+  function downloadFile(filename, content, type) {
+    var blob = new Blob([content], { type: type });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /* ── Load saved session ── */
+  function loadSession(id) {
+    var lib = loadLibrary();
+    var session = lib.find(function(s) { return s.id === id; });
+    if (!session) return;
+
+    isReadonly = true;
+    currentSessionId = session.id;
+    currentSessionName = session.name;
+    currentFieldA = session.fieldA;
+    currentFieldB = session.fieldB;
+    currentFocus = session.focus || '';
+    activeMode = session.mode || 'analogies';
+    conversationHistory = session.conversationHistory || [];
+    sessionMessages = session.messages || [];
+
+    // Update UI
+    document.getElementById('fieldA').value = session.fieldA;
+    document.getElementById('fieldB').value = session.fieldB;
+    document.getElementById('focusField').value = session.focus || '';
+    document.querySelectorAll('.mode-btn').forEach(function(b) {
+      b.classList.toggle('active', b.dataset.mode === session.mode);
+    });
+
+    document.getElementById('thread').innerHTML = '';
+    document.getElementById('thread').classList.add('visible');
+    document.getElementById('chatBox').classList.remove('visible');
+    document.getElementById('readonlyBanner').classList.add('visible');
+
+    showSessionToolbar();
+    document.getElementById('saveBtn').style.display = 'none';
+
+    // Replay messages
+    sessionMessages.forEach(function(m) {
+      if (m.role === 'user') {
+        appendUserBubble(m.text);
+      } else {
+        var div = document.createElement('div');
+        div.className = 'msg';
+        div.innerHTML = '<div class="msg-role">Discovery Engine</div>'
+          + '<div class="response-card"><div class="response-header">'
+          + '<span class="response-title">' + esc(m.cardTitle || 'Discoveries') + '</span>'
+          + '<div class="tags">' + [currentFieldA, currentFieldB].map(function(t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('') + '</div>'
+          + '</div><div class="response-body">' + m.html + '</div></div>';
+        document.getElementById('thread').appendChild(div);
+      }
+    });
+
+    renderLibrary();
+    document.getElementById('thread').scrollTop = document.getElementById('thread').scrollHeight;
+  }
+
+  /* ── Toolbar ── */
+  function showSessionToolbar() {
+    var toolbar = document.getElementById('sessionToolbar');
+    toolbar.classList.add('visible');
+    document.getElementById('sessionName').textContent = currentSessionName || (currentFieldA + ' × ' + currentFieldB);
+    document.getElementById('saveBtn').style.display = '';
+  }
+
+  /* ── Escape ── */
+  function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  /* ── API ── */
+  async function callAPI(messages) {
+    var headers = { 'Content-Type': 'application/json' };
+    if (apiKey) { headers['x-api-key'] = apiKey; headers['anthropic-version'] = '2023-06-01'; }
+    var res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1500, system: SYSTEM, messages: messages })
+    });
+    if (!res.ok) {
+      var e = await res.json().catch(function() { return {}; });
+      throw new Error((e.error && e.error.message) ? e.error.message : 'HTTP ' + res.status);
+    }
+    var data = await res.json();
+    return (data.content || []).map(function(b) { return b.text || ''; }).join('').trim();
+  }
+
+  /* ── Thread rendering ── */
+  function appendUserBubble(text) {
+    var thread = document.getElementById('thread');
+    var div = document.createElement('div');
+    div.className = 'msg';
+    div.innerHTML = '<div class="msg-role">You</div><div class="user-bubble">' + esc(text) + '</div>';
+    thread.appendChild(div);
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  function appendLoadingCard(title, tags) {
+    var thread = document.getElementById('thread');
+    var div = document.createElement('div');
+    div.className = 'msg';
+    div.id = 'activeCard';
+    var tagHtml = tags.map(function(t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
+    div.innerHTML = '<div class="msg-role">Discovery Engine</div>'
+      + '<div class="response-card">'
+      + '<div class="response-header"><span class="response-title">' + esc(title) + '</span><div class="tags">' + tagHtml + '</div></div>'
+      + '<div class="response-body" id="activeCardBody">'
+      + '<div class="loading" id="activeLoading"><div class="spinner"></div><span id="activeLoadingText">Searching...</span></div>'
+      + '<div class="error-msg" id="activeError" style="display:none"></div>'
+      + '</div></div>';
+    thread.appendChild(div);
+    thread.scrollTop = thread.scrollHeight;
+    var msgs = ['Scanning structural patterns...', 'Crossing reference maps...', 'Finding the margins...', 'Assembling discoveries...'];
+    var mi = 0;
+    var ticker = setInterval(function() {
+      var el = document.getElementById('activeLoadingText');
+      if (el) { mi = (mi + 1) % msgs.length; el.textContent = msgs[mi]; } else clearInterval(ticker);
+    }, 1800);
+    return ticker;
+  }
+
+  function finalizeCard(html, ticker, cardTitle, rawText) {
+    clearInterval(ticker);
+    var body = document.getElementById('activeCardBody');
+    if (body) body.innerHTML = html;
+    var card = document.getElementById('activeCard');
+    if (card) card.removeAttribute('id');
+    // Store for library
+    sessionMessages.push({ role: 'ai', cardTitle: cardTitle, html: html, text: rawText || '' });
+    document.getElementById('thread').scrollTop = document.getElementById('thread').scrollHeight;
+  }
+
+  function errorCard(msg, ticker) {
+    clearInterval(ticker);
+    var loading = document.getElementById('activeLoading');
+    var errEl = document.getElementById('activeError');
+    if (loading) loading.style.display = 'none';
+    if (errEl) { errEl.textContent = 'Error: ' + msg; errEl.style.display = 'block'; }
+  }
+
+  function buildFollowUpButtons(questions) {
+    if (!questions || !questions.length) return '';
+    return '<div class="followups">' + questions.map(function(q) {
+      return '<button class="fq-btn" data-question="' + esc(q) + '">\u2197 ' + esc(q) + '</button>';
+    }).join('') + '</div>';
+  }
+
+  /* ── Event: follow-up button clicks ── */
+  document.addEventListener('click', function(e) {
+    if (e.target && e.target.classList.contains('fq-btn') && !e.target.disabled && !isReadonly) {
+      var q = e.target.getAttribute('data-question');
+      if (q) {
+        var input = document.getElementById('chatInput');
+        input.value = q;
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+        input.focus();
+      }
+    }
+  });
+
+  /* ── Event: library clicks ── */
+  document.getElementById('libraryList').addEventListener('click', function(e) {
+    var delBtn = e.target.closest('.lib-item-del');
+    if (delBtn) {
+      e.stopPropagation();
+      var id = delBtn.dataset.id;
+      var lib = loadLibrary().filter(function(s) { return s.id !== id; });
+      saveLibrary(lib);
+      if (currentSessionId === id) resetAll();
+      renderLibrary();
+      return;
+    }
+    var item = e.target.closest('.lib-item');
+    if (item) loadSession(item.dataset.id);
+  });
+
+  /* ── Mode buttons ── */
+  document.querySelectorAll('.mode-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.mode-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      activeMode = btn.dataset.mode;
+    });
+  });
+
+  /* ── Textarea auto-resize ── */
+  var chatInput = document.getElementById('chatInput');
+  chatInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+  chatInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  });
+
+  /* ── Run ── */
+  document.getElementById('runBtn').addEventListener('click', async function() {
+    currentFieldA = document.getElementById('fieldA').value.trim();
+    currentFieldB = document.getElementById('fieldB').value.trim();
+    currentFocus = document.getElementById('focusField').value.trim();
+    if (!currentFieldA || !currentFieldB || isLoading) return;
+
+    isLoading = true;
+    isReadonly = false;
+    conversationHistory = [];
+    sessionMessages = [];
+    currentSessionId = null;
+    currentSessionName = currentFieldA + ' \u00d7 ' + currentFieldB;
+
+    document.getElementById('runBtn').disabled = true;
+    document.getElementById('thread').innerHTML = '';
+    document.getElementById('thread').classList.add('visible');
+    document.getElementById('chatBox').classList.add('visible');
+    document.getElementById('readonlyBanner').classList.remove('visible');
+    document.getElementById('saveBtn').style.display = '';
+    showSessionToolbar();
+    renderLibrary();
+
+    var userMsg = modeInstructions[activeMode] + '\n\nField A: ' + currentFieldA + '\nField B: ' + currentFieldB;
+    if (currentFocus) userMsg += '\n\nFocus filter: ' + currentFocus + '\n\nAll findings and follow-up questions should be targeted toward this specific problem or question.';
+    var displayText = modeLabels[activeMode] + ': ' + currentFieldA + ' \u00d7 ' + currentFieldB;
+    if (currentFocus) displayText += '\nFocus: ' + currentFocus;
+    conversationHistory.push({ role: 'user', content: userMsg });
+    sessionMessages.push({ role: 'user', text: displayText });
+    appendUserBubble(displayText);
+
+    var cardTags = [currentFieldA, currentFieldB];
+    if (currentFocus) cardTags.push('Focus: ' + currentFocus);
+    var ticker = appendLoadingCard(modeLabels[activeMode], cardTags);
+
+    try {
+      var raw = await callAPI(conversationHistory);
+      conversationHistory.push({ role: 'assistant', content: raw });
+      var clean = raw.replace(/```json|```/g, '').trim();
+      var parsed = JSON.parse(clean);
+
+      var html = '<div class="section"><div class="section-label">Core connection</div><div class="summary-box">' + esc(parsed.summary || '') + '</div></div>';
+      if (parsed.findings && parsed.findings.length) {
+        html += '<div class="section"><div class="section-label">Discoveries</div><div class="insight-list">';
+        parsed.findings.forEach(function(f) {
+          html += '<div class="insight"><div class="insight-title">' + esc(f.title) + '</div><div class="insight-body">' + esc(f.body) + '</div></div>';
+        });
+        html += '</div></div>';
+      }
+      html += buildFollowUpButtons(parsed.followUps);
+
+      // Build plain text for export
+      var plainText = (parsed.summary || '') + '\n\n';
+      (parsed.findings || []).forEach(function(f) { plainText += f.title + ': ' + f.body + '\n\n'; });
+
+      finalizeCard(html, ticker, modeLabels[activeMode], plainText.trim());
+    } catch(err) {
+      errorCard(err.message || 'Something went wrong', ticker);
+      sessionMessages.pop(); // remove failed ai entry
+    }
+
+    document.getElementById('runBtn').disabled = false;
+    isLoading = false;
+  });
+
+  /* ── Send chat ── */
+  document.getElementById('sendBtn').addEventListener('click', sendChat);
+  async function sendChat() {
+    var question = chatInput.value.trim();
+    if (!question || isLoading || isReadonly) return;
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    await sendMessage(question);
+  }
+
+  async function sendMessage(question) {
+    if (isLoading) return;
+    isLoading = true;
+    document.getElementById('sendBtn').disabled = true;
+    document.querySelectorAll('.fq-btn').forEach(function(b) { b.disabled = true; });
+
+    sessionMessages.push({ role: 'user', text: question });
+    appendUserBubble(question);
+    conversationHistory.push({ role: 'user', content: question });
+
+    var ticker = appendLoadingCard('Follow-up', [currentFieldA, currentFieldB]);
+
+    try {
+      var raw = await callAPI(conversationHistory);
+      conversationHistory.push({ role: 'assistant', content: raw });
+
+      var mainText = raw;
+      var followUps = [];
+      var fuIdx = raw.lastIndexOf('FOLLOWUPS:');
+      if (fuIdx !== -1) {
+        var fuPart = raw.slice(fuIdx + 10).trim();
+        mainText = raw.slice(0, fuIdx).trim();
+        try { followUps = JSON.parse(fuPart); } catch(e) {}
+      }
+
+      var paragraphs = mainText.split(/\n{2,}/).map(function(p) { return p.trim(); }).filter(Boolean);
+      var html = '<div class="chat-answer">';
+      paragraphs.forEach(function(p) { html += '<p>' + esc(p) + '</p>'; });
+      html += '</div>' + buildFollowUpButtons(followUps);
+
+      finalizeCard(html, ticker, 'Follow-up', mainText);
+    } catch(err) {
+      errorCard(err.message || 'Something went wrong', ticker);
+      sessionMessages.pop();
+    }
+
+    document.getElementById('sendBtn').disabled = false;
+    document.querySelectorAll('.fq-btn').forEach(function(b) { b.disabled = false; });
+    isLoading = false;
+  }
+
+  /* ── Reset ── */
+  function resetAll() {
+    isReadonly = false;
+    conversationHistory = [];
+    sessionMessages = [];
+    currentSessionId = null;
+    currentSessionName = '';
+    currentFieldA = ''; currentFieldB = ''; currentFocus = '';
+    document.getElementById('thread').innerHTML = '';
+    document.getElementById('thread').classList.remove('visible');
+    document.getElementById('chatBox').classList.remove('visible');
+    document.getElementById('sessionToolbar').classList.remove('visible');
+    document.getElementById('readonlyBanner').classList.remove('visible');
+    document.getElementById('fieldA').value = '';
+    document.getElementById('fieldB').value = '';
+    document.getElementById('focusField').value = '';
+    document.getElementById('runBtn').disabled = false;
+    document.getElementById('chatInput').value = '';
+    renderLibrary();
+  }
+
+  /* ── Toolbar buttons ── */
+  document.getElementById('sidebarNewBtn').addEventListener('click', resetAll);
+  document.getElementById('saveBtn').addEventListener('click', doSave);
+  document.getElementById('exportMdBtn').addEventListener('click', exportMarkdown);
+  document.getElementById('exportJsonBtn').addEventListener('click', exportJson);
+
+  /* ── Rename ── */
+  document.getElementById('renameBtn').addEventListener('click', function() {
+    document.getElementById('modalInput').value = currentSessionName;
+    document.getElementById('modalOverlay').classList.add('visible');
+    document.getElementById('modalInput').focus();
+  });
+  document.getElementById('modalCancel').addEventListener('click', function() {
+    document.getElementById('modalOverlay').classList.remove('visible');
+  });
+  document.getElementById('modalConfirm').addEventListener('click', function() {
+    var val = document.getElementById('modalInput').value.trim();
+    if (val) {
+      currentSessionName = val;
+      document.getElementById('sessionName').textContent = val;
+      // Update library if already saved
+      if (currentSessionId) {
+        var lib = loadLibrary();
+        var idx = lib.findIndex(function(s) { return s.id === currentSessionId; });
+        if (idx >= 0) { lib[idx].name = val; saveLibrary(lib); renderLibrary(); }
+      }
+    }
+    document.getElementById('modalOverlay').classList.remove('visible');
+  });
+  document.getElementById('modalInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('modalConfirm').click();
+    if (e.key === 'Escape') document.getElementById('modalCancel').click();
+  });
+  document.getElementById('modalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) document.getElementById('modalCancel').click();
+  });
+
+  /* ── Enter on setup inputs ── */
+  ['fieldA','fieldB'].forEach(function(id) {
+    document.getElementById(id).addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') document.getElementById('runBtn').click();
+    });
+  });
+
+  /* ── Init ── */
+  renderLibrary();
+</script>
+</body>
+</html>
